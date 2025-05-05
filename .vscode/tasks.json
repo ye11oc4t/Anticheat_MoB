@@ -1,0 +1,22 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+      {
+        "label": "build-antidebug",
+        "type": "shell",
+        "command": "g++",
+        "args": [
+          "-g",
+          "main.cpp",
+          "-o",
+          "AntiDebugTest.exe",
+          "-mwindows"  // MessageBox 사용용
+        ],
+        "group": {
+          "kind": "build",
+          "isDefault": true
+        }
+      }
+    ]
+  }
+  
