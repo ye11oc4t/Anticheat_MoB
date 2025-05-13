@@ -1,6 +1,8 @@
 #include <windows.h>
 #include <iostream>
 #include <string>
+#include <tlhelp32.h>
+#include <psapi.h>
 
 #define NT_SUCCESS(Status) ((NTSTATUS)(Status) >= 0)
 
@@ -17,6 +19,8 @@ public:
         else if (checkPEB()) { detected = true; reason = "PEB.BeingDebugged"; }
         else if (checkHWBP()) { detected = true; reason = "Hardware Breakpoints"; }
         else if (checkVEH()) { detected = true; reason = "VEH Handler Hook"; }
+        else if (checkIATHook("kernel32.dll", "WriteProcessMemory")) { detected = true; reason = "IAT Hook Detected"; }
+        else if (checkSuspiciousModules()) { detected = true; reason = "Suspicious DLL Loaded"; }
 
         if (detected) {
             logDetection(reason);
@@ -110,6 +114,39 @@ private:
         SetUnhandledExceptionFilter((LPTOP_LEVEL_EXCEPTION_FILTER)originalHandler);
         return originalHandler != NULL;
     }
+
+    bool checkIATHook(const char* moduleName, const char* functionName) {
+        FARPROC func = GetProcAddress(GetModuleHandleA(moduleName), functionName);
+        if (!func) return false;
+        MEMORY_BASIC_INFORMATION mbi = {};
+        if (VirtualQuery(func, &mbi, sizeof(mbi))) {
+            if (!(mbi.Protect & PAGE_EXECUTE_READ)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    bool checkSuspiciousModules() {
+        HMODULE hMods[1024];
+        DWORD cbNeeded;
+        HANDLE hProcess = GetCurrentProcess();
+
+        if (EnumProcessModules(hProcess, hMods, sizeof(hMods), &cbNeeded)) {
+            for (unsigned int i = 0; i < (cbNeeded / sizeof(HMODULE)); i++) {
+                char szModName[MAX_PATH];
+                if (GetModuleFileNameA(hMods[i], szModName, sizeof(szModName) / sizeof(char))) {
+                    std::string modName(szModName);
+                    if (modName.find("cheat") != std::string::npos ||
+                        modName.find("inject") != std::string::npos ||
+                        modName.find("dbg") != std::string::npos) {
+                        return true;
+                    }
+                }
+            }
+        }
+        return false;
+    }
 };
 
 int main() {
@@ -119,4 +156,6 @@ int main() {
     std::cout << "[+] 디버거 없음. 정상 실행됨.\n";
     system("pause");
     return 0;
-}
+} // 커널모드 방어는 별도 드라이버(.sys)에서 구현함. 
+// 커널모드 방어 기능: OpenProcess 차단, VAD 스캔, ObRegisterCallbacks, PsSetCreateProcessNotifyRoutineEx 등
+
